@@ -1,0 +1,6 @@
+[general]
+class = "AutomaticShading"
+name = "OG Süd - Süd"
+
+[sensors]
+enable = "0/6/46"
