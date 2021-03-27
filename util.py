@@ -21,4 +21,4 @@ def percentage_to_int(value: int):
     Scale values from 0-100 to 0-255
     """
 
-    return int((255.0 / 100.0) * float(value))
+    return round((255.0 / 100.0) * float(value))

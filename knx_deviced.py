@@ -139,7 +139,7 @@ class Core:
                 continue
 
             # create instance
-            instance = device_cls(self.connection, self.loop, self.scheduler, device_config, self.core_config)
+            instance = device_cls(self.connection, self.loop, self.scheduler, device_config, self.core_config, filename)
             device_instance = DeviceInstance(filename, device_config, instance)
             self.device_instances.append(device_instance)
 
@@ -168,7 +168,11 @@ class Core:
                 logger.exception("Error while loading saved state")
                 continue
 
-            await device_instance.instance.state_load(state)
+            try:
+                await device_instance.instance.state_load(state)
+            except:
+                logger.exception("Error while restoring saved state")
+                continue
 
         for device_instance in self.device_instances:
             await device_instance.instance.init()

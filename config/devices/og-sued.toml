@@ -4,7 +4,10 @@ name = "OG Süd - Süd"
 
 [sensors]
 enable = "0/6/100"
+outdoor_brightness = "0/6/101"
+switch_on_delay = "0/6/102"
+switch_off_delay = "0/6/103"
 
 [actors]
-position-height = "0/6/101"
-position-slat = "0/6/102"
+position_height = "0/6/110"
+position_slat = "0/6/111"
