@@ -14,5 +14,6 @@ class AutomaticShading(device.Device):
     def init(self):
         pass
 
-    def sensor_enable(self, packet: knxdclient.ReceivedGroupAPDU):
+    async def sensor_enable(self, packet: knxdclient.ReceivedGroupAPDU):
+        print("Received group telegram: {}".format(packet))
         pass

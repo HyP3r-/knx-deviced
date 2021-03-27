@@ -7,10 +7,11 @@ from apscheduler.schedulers.background import BackgroundScheduler
 
 class Device:
     def __init__(self, connection: knxdclient.KNXDConnection, loop: asyncio.AbstractEventLoop,
-                 scheduler: BackgroundScheduler):
+                 scheduler: BackgroundScheduler, config: dict):
         self.connection = connection
         self.loop = loop
         self.scheduler = scheduler
+        self.config = config
 
     @abstractmethod
     def state_load(self, state: dict):

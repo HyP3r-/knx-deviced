@@ -2,10 +2,12 @@
 
 import asyncio
 import importlib
+import logging
 import os
 import pickle
 import signal
-from typing import List
+import sys
+from typing import List, Dict, Callable
 
 import knxdclient
 import toml
@@ -13,20 +15,53 @@ from apscheduler.schedulers.background import BackgroundScheduler
 
 import device
 
+__author__ = "Andreas Fendt"
+__copyright__ = "Copyright 2021, Andreas Fendt"
+__credits__ = ["Andreas Fendt"]
+__maintainer__ = "Andreas Fendt"
+__email__ = "info@fendt-it.com"
+__status__ = "Production"
+
+# configure logging
+logger = logging.getLogger("knx-deviced")
+logger.setLevel(logging.INFO)
+handler_stream = logging.StreamHandler(sys.stdout)
+formatter = logging.Formatter("%(asctime)s | %(levelname)s | %(process)d | %(message)s")
+handler_stream.setFormatter(formatter)
+logger.addHandler(handler_stream)
+
+
+def handle_unhandled_exception(exc_type, exc_value, exc_traceback):
+    """
+    Handler for unhandled exceptions that will write to the logs
+    """
+
+    if issubclass(exc_type, KeyboardInterrupt):
+        # call the default excepthook saved at __excepthook__
+        sys.__excepthook__(exc_type, exc_value, exc_traceback)
+        return
+
+    logger.critical("Unhandled exception", exc_info=(exc_type, exc_value, exc_traceback))
+
+
+sys.excepthook = handle_unhandled_exception
+
 
 class DeviceInstance:
-    def __init__(self, name: str, cfg: dict, instance: device.Device):
+    def __init__(self, name: str, config: dict, instance: device.Device):
         self.name = name
-        self.cfg = cfg
+        self.config = config
         self.instance = instance
 
 
 class Core:
     device_instances: List[DeviceInstance]
+    device_handlers: Dict[str, List[Callable]]
 
     def __init__(self):
         # global variables
         self.device_instances = []
+        self.device_handlers = {}
         self.project_path = os.path.dirname(__file__)
 
         # create knx-connection, async loop and scheduler
@@ -44,8 +79,8 @@ class Core:
             self.device_modules.append(importlib.import_module(f"devices.{filename}"))
 
         # bind signals
-        signal.signal(signal.SIGINT, self.stop)
-        signal.signal(signal.SIGTERM, self.stop)
+        for signal_name in ("SIGINT", "SIGTERM"):
+            self.loop.add_signal_handler(getattr(signal, signal_name), lambda: asyncio.ensure_future(self.stop()))
 
     def run(self):
         """
@@ -59,21 +94,23 @@ class Core:
 
     def devices_create(self):
         """
-        Scan folder cfg/devices for configuration files and create instance
+        Scan folder config/devices for configuration files and create instance
         """
 
-        path_cfg_devices = os.path.join(self.project_path, "cfg", "devices")
-        files = os.listdir(path_cfg_devices)
+        path_config_devices = os.path.join(self.project_path, "config", "devices")
+        files = os.listdir(path_config_devices)
 
         for file in files:
             filename, file_extension = os.path.splitext(file)
             if file_extension != ".toml":
                 continue
 
-            with open(os.path.join(path_cfg_devices, file), "r") as f:
-                cfg = toml.load(f)
+            # load configuration
+            with open(os.path.join(path_config_devices, file), "r") as f:
+                config = toml.load(f)
 
-            device_cls_str = cfg["general"]["class"]
+            # search for module
+            device_cls_str = config["general"]["class"]
             device_cls = None
             for device_module in self.device_modules:
                 if device_cls_str in dir(device_module):
@@ -81,12 +118,20 @@ class Core:
                     break
 
             if device_cls is None:
-                print("No Class found")
+                logger.warning(f"No Class found for {file}")
                 continue
 
-            instance = device_cls(self.connection, self.loop, self.scheduler)
-            device_instance = DeviceInstance(filename, cfg, instance)
+            # create instance
+            instance = device_cls(self.connection, self.loop, self.scheduler, config)
+            device_instance = DeviceInstance(filename, config, instance)
             self.device_instances.append(device_instance)
+
+            # bind handlers
+            for sensor, group_address in dict(config["sensors"]).items():
+                if group_address not in self.device_handlers:
+                    self.device_handlers[group_address] = []
+                func = getattr(instance, f"sensor_{sensor}")
+                self.device_handlers[group_address].append(func)
 
     def devices_init(self):
         """
@@ -99,8 +144,13 @@ class Core:
             if not os.path.exists(path):
                 continue
 
-            with open(path, "r") as f:
-                state = pickle.load(f)
+            try:
+                with open(path, "rb") as f:
+                    state = pickle.load(f)
+            except:
+                logger.exception("Error while loading saved state")
+                continue
+
             device_instance.instance.state_load(state)
 
         for device_instance in self.device_instances:
@@ -108,24 +158,29 @@ class Core:
 
     async def _run(self):
         """
-        TODO comment?
+        Register Telegram Handler, connect to knxd and run in background
         """
 
         self.connection.register_telegram_handler(self.handler)
-
         await self.connection.connect()
-        # Connection was successful. Start receive loop:
         run_task = asyncio.create_task(self.connection.run())
-        # Now that the receive loop is running, we can open the KNXd Group Socket:
         await self.connection.open_group_socket()
-
         await run_task
 
     async def handler(self, packet: knxdclient.ReceivedGroupAPDU) -> None:
-        # TODO send message to the devices
-        print("Received group telegram: {}".format(packet))
+        """
+        Handler for incoming packets
+        """
 
-    def stop(self, signum, frame):
+        group_addr = str(packet.dst)
+
+        if group_addr not in self.device_handlers:
+            return
+
+        for func in self.device_handlers[group_addr]:
+            await func(packet)
+
+    async def stop(self):
         """
         Save the state of the devices and shutdown
         """
@@ -134,11 +189,11 @@ class Core:
         for device_instance in self.device_instances:
             path = os.path.join(self.project_path, "persistence", f"{device_instance.name}.pickle")
             state = device_instance.instance.state_save()
-            with open(path, "w") as f:
+            with open(path, "wb") as f:
                 pickle.dump(state, f)
 
         # stop connection
-        self.loop.run_until_complete(self.connection.stop())
+        await self.connection.stop()
 
 
 if __name__ == "__main__":
