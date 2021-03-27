@@ -188,7 +188,10 @@ class Core:
             return
 
         for func in self.device_handlers[group_addr]:
-            await func(packet)
+            try:
+                await func(packet)
+            except:
+                logger.exception(f"Error while receiving sensor data {group_addr}, {str(func)}")
 
     async def stop(self):
         """
