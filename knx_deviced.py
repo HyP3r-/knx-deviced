@@ -11,7 +11,7 @@ from typing import List, Dict, Callable
 
 import knxdclient
 import toml
-from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 import device
 
@@ -67,7 +67,7 @@ class Core:
         # create knx-connection, async loop and scheduler
         self.connection = knxdclient.KNXDConnection()
         self.loop = asyncio.get_event_loop()
-        self.scheduler = BackgroundScheduler()
+        self.scheduler = AsyncIOScheduler()
 
         # import devices modules
         self.device_modules = []
@@ -82,17 +82,34 @@ class Core:
         for signal_name in ("SIGINT", "SIGTERM"):
             self.loop.add_signal_handler(getattr(signal, signal_name), lambda: asyncio.ensure_future(self.stop()))
 
+        # load configuration
+        with open(os.path.join(self.project_path, "config", "core", "config.toml"), "r") as f:
+            self.core_config = toml.load(f)
+
     def run(self):
         """
         Startup System by creating for each configuration file a instance
         """
 
-        self.devices_create()
-        self.devices_init()
-
         self.loop.run_until_complete(self._run())
 
-    def devices_create(self):
+    async def _run(self):
+        """
+        Register Telegram Handler, connect to knxd and run in background
+        """
+
+        await self.devices_create()
+        await self.devices_init()
+
+        self.scheduler.start()
+
+        self.connection.register_telegram_handler(self.handler)
+        await self.connection.connect()
+        run_task = asyncio.create_task(self.connection.run())
+        await self.connection.open_group_socket()
+        await run_task
+
+    async def devices_create(self):
         """
         Scan folder config/devices for configuration files and create instance
         """
@@ -107,10 +124,10 @@ class Core:
 
             # load configuration
             with open(os.path.join(path_config_devices, file), "r") as f:
-                config = toml.load(f)
+                device_config = toml.load(f)
 
             # search for module
-            device_cls_str = config["general"]["class"]
+            device_cls_str = device_config["general"]["class"]
             device_cls = None
             for device_module in self.device_modules:
                 if device_cls_str in dir(device_module):
@@ -122,18 +139,18 @@ class Core:
                 continue
 
             # create instance
-            instance = device_cls(self.connection, self.loop, self.scheduler, config)
-            device_instance = DeviceInstance(filename, config, instance)
+            instance = device_cls(self.connection, self.loop, self.scheduler, device_config, self.core_config)
+            device_instance = DeviceInstance(filename, device_config, instance)
             self.device_instances.append(device_instance)
 
             # bind handlers
-            for sensor, group_address in dict(config["sensors"]).items():
+            for sensor, group_address in dict(device_config["sensors"]).items():
                 if group_address not in self.device_handlers:
                     self.device_handlers[group_address] = []
                 func = getattr(instance, f"sensor_{sensor}")
                 self.device_handlers[group_address].append(func)
 
-    def devices_init(self):
+    async def devices_init(self):
         """
         Load state from the persistence folder and init instances
         """
@@ -151,21 +168,10 @@ class Core:
                 logger.exception("Error while loading saved state")
                 continue
 
-            device_instance.instance.state_load(state)
+            await device_instance.instance.state_load(state)
 
         for device_instance in self.device_instances:
-            device_instance.instance.init()
-
-    async def _run(self):
-        """
-        Register Telegram Handler, connect to knxd and run in background
-        """
-
-        self.connection.register_telegram_handler(self.handler)
-        await self.connection.connect()
-        run_task = asyncio.create_task(self.connection.run())
-        await self.connection.open_group_socket()
-        await run_task
+            await device_instance.instance.init()
 
     async def handler(self, packet: knxdclient.ReceivedGroupAPDU) -> None:
         """
@@ -188,7 +194,7 @@ class Core:
         # save the state
         for device_instance in self.device_instances:
             path = os.path.join(self.project_path, "persistence", f"{device_instance.name}.pickle")
-            state = device_instance.instance.state_save()
+            state = await device_instance.instance.state_save()
             with open(path, "wb") as f:
                 pickle.dump(state, f)
 

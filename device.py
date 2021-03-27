@@ -2,25 +2,26 @@ import asyncio
 from abc import abstractmethod
 
 import knxdclient
-from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 
 class Device:
     def __init__(self, connection: knxdclient.KNXDConnection, loop: asyncio.AbstractEventLoop,
-                 scheduler: BackgroundScheduler, config: dict):
+                 scheduler: AsyncIOScheduler, device_config: dict, core_config: dict):
         self.connection = connection
         self.loop = loop
         self.scheduler = scheduler
-        self.config = config
+        self.device_config = device_config
+        self.core_config = core_config
 
     @abstractmethod
-    def state_load(self, state: dict):
+    async def state_load(self, state: dict):
         pass
 
     @abstractmethod
-    def state_save(self) -> dict:
+    async def state_save(self) -> dict:
         pass
 
     @abstractmethod
-    def init(self):
+    async def init(self):
         pass
