@@ -19,6 +19,8 @@ input = "1/2/3"
 output = "1/2/4"
 ```
 
+Furthermore, the project also has a global configuration ([config/core/config.toml](config/core/config.toml)) with which you can store cross-device configuration.
+
 ### Class
 The class is instantiated with the configuration, the KNX interface and can receive values via the sensor inputs and in turn send values on the bus with the KNX interface.
 
@@ -46,7 +48,7 @@ class LogicInverter(device.Device):
 ## Implementations
 Currently, two Virtual KNX devices have been implemented so far:
 * Logic Inverter
-* Automatic Shading
+* Automatic Shading (The automatic shading was designed very much according to customer requirements, but should be relatively easy to adjust)
 
 # License
 Released under the [MIT License](LICENSE).
