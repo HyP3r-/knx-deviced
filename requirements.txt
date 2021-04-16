@@ -2,3 +2,4 @@ astral~=2.2
 APScheduler~=3.7.0
 knxdclient~=0.3.2
 toml~=0.10.2
+Unidecode~=1.2.0

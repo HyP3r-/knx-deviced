@@ -1,3 +1,6 @@
+[general]
+log_level = "INFO"
+
 [location]
 name = "München"
 region = "Germany"

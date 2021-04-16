@@ -1,0 +1,11 @@
+[Unit]
+Description=KNX-DeviceD
+After=network-online.target knxd.service
+Wants=network-online.target knxd.service
+
+[Service]
+ExecStart=/opt/knx-deviced/venv/bin/python /opt/knx-deviced/knx_deviced.py
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

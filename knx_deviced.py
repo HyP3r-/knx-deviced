@@ -22,30 +22,6 @@ __maintainer__ = "Andreas Fendt"
 __email__ = "info@fendt-it.com"
 __status__ = "Production"
 
-# configure logging
-logger = logging.getLogger("knx-deviced")
-logger.setLevel(logging.INFO)
-handler_stream = logging.StreamHandler(sys.stdout)
-formatter = logging.Formatter("%(asctime)s | %(levelname)s | %(process)d | %(message)s")
-handler_stream.setFormatter(formatter)
-logger.addHandler(handler_stream)
-
-
-def handle_unhandled_exception(exc_type, exc_value, exc_traceback):
-    """
-    Handler for unhandled exceptions that will write to the logs
-    """
-
-    if issubclass(exc_type, KeyboardInterrupt):
-        # call the default excepthook saved at __excepthook__
-        sys.__excepthook__(exc_type, exc_value, exc_traceback)
-        return
-
-    logger.critical("Unhandled exception", exc_info=(exc_type, exc_value, exc_traceback))
-
-
-sys.excepthook = handle_unhandled_exception
-
 
 class DeviceInstance:
     def __init__(self, name: str, config: dict, instance: device.Device):
@@ -54,7 +30,7 @@ class DeviceInstance:
         self.instance = instance
 
 
-class Core:
+class KnxDeviceDaemon:
     device_instances: List[DeviceInstance]
     device_handlers: Dict[str, List[Callable]]
 
@@ -86,6 +62,30 @@ class Core:
         with open(os.path.join(self.project_path, "config", "core", "config.toml"), "r") as f:
             self.core_config = toml.load(f)
 
+        # configure logging
+        self.logger = logging.getLogger("knx-deviced")
+        self.logger.setLevel(self.core_config["general"]["log_level"])
+        handler_stream = logging.StreamHandler(sys.stdout)
+        formatter = logging.Formatter("%(asctime)s | %(name)s | %(levelname)s | %(process)d | %(message)s")
+        handler_stream.setFormatter(formatter)
+        self.logger.addHandler(handler_stream)
+
+        sys.excepthook = self.handle_unhandled_exception
+
+        self.logger.info("Init of KNX-DeviceD successful")
+
+    def handle_unhandled_exception(self, exc_type, exc_value, exc_traceback):
+        """
+        Handler for unhandled exceptions that will write to the logs
+        """
+
+        if issubclass(exc_type, KeyboardInterrupt):
+            # call the default excepthook saved at __excepthook__
+            sys.__excepthook__(exc_type, exc_value, exc_traceback)
+            return
+
+        self.logger.critical("Unhandled exception", exc_info=(exc_type, exc_value, exc_traceback))
+
     def run(self):
         """
         Startup System by creating for each configuration file a instance
@@ -97,6 +97,8 @@ class Core:
         """
         Register Telegram Handler, connect to knxd and run in background
         """
+
+        self.logger.info("Running KNX-DeviceD")
 
         await self.devices_create()
         await self.devices_init()
@@ -113,6 +115,8 @@ class Core:
         """
         Scan folder config/devices for configuration files and create instance
         """
+
+        self.logger.info("Creating Devices")
 
         path_config_devices = os.path.join(self.project_path, "config", "devices")
         files = os.listdir(path_config_devices)
@@ -135,7 +139,7 @@ class Core:
                     break
 
             if device_cls is None:
-                logger.warning(f"No Class found for {file}")
+                self.logger.warning(f"No Class found for {file}")
                 continue
 
             # create instance
@@ -155,6 +159,8 @@ class Core:
         Load state from the persistence folder and init instances
         """
 
+        self.logger.info("Init Devices")
+
         for device_instance in self.device_instances:
             path = os.path.join(self.project_path, "persistence", f"{device_instance.name}.pickle")
 
@@ -165,13 +171,13 @@ class Core:
                 with open(path, "rb") as f:
                     state = pickle.load(f)
             except:
-                logger.exception("Error while loading saved state")
+                self.logger.exception("Error while loading saved state")
                 continue
 
             try:
                 await device_instance.instance.state_load(state)
             except:
-                logger.exception("Error while restoring saved state")
+                self.logger.exception("Error while restoring saved state")
                 continue
 
         for device_instance in self.device_instances:
@@ -191,7 +197,7 @@ class Core:
             try:
                 await func(packet)
             except:
-                logger.exception(f"Error while receiving sensor data {group_addr}, {str(func)}")
+                self.logger.exception(f"Error while receiving sensor data {group_addr}, {str(func)}")
 
     async def stop(self):
         """
@@ -210,5 +216,5 @@ class Core:
 
 
 if __name__ == "__main__":
-    core = Core()
-    core.run()
+    knx_device_daemon = KnxDeviceDaemon()
+    knx_device_daemon.run()

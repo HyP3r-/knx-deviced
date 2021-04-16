@@ -4,6 +4,7 @@ from datetime import timedelta
 from typing import Optional
 
 import knxdclient
+from unidecode import unidecode
 
 
 def str_to_group_address(group_address: str):
@@ -27,7 +28,28 @@ def percentage_to_int(value):
     return round((255.0 / 100.0) * float(value))
 
 
+def packet_with_payload(packet: knxdclient.ReceivedGroupAPDU):
+    """
+    Return true if its a write or response
+    """
+
+    return packet.payload.type == knxdclient.KNXDAPDUType.WRITE or \
+           packet.payload.type == knxdclient.KNXDAPDUType.RESPONSE
+
+
+def sane_logger_name(name: str):
+    """
+    Make the logger name more uniform
+    """
+
+    return unidecode(name.replace(" ", "_").lower())
+
+
 class SwitchOnOffDelay:
+    """
+    Auxiliary class for switch-on and switch-off delays
+    """
+
     def __init__(self, delay: Optional[timedelta] = None):
         self.delay = delay.total_seconds() if delay is not None else None
         self.start = None
@@ -36,7 +58,7 @@ class SwitchOnOffDelay:
         if self.start is None:
             self.start = time.time()
 
-        return self.start + self.delay > time.time()
+        return self.start + self.delay < time.time()
 
     def reset(self):
         self.start = None
