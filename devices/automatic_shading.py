@@ -44,6 +44,7 @@ class AutomaticShading(device.Device):
         self.automatic_shading_sun_active = False
         self.automatic_shading_wait_time = None
         self.automatic_shading_slat_current = None
+        self.automatic_shading_cardinal_direction_stop_time = None
 
         # sun configuration
         self.location_info = LocationInfo(self.core_config["location"]["name"],
@@ -162,7 +163,7 @@ class AutomaticShading(device.Device):
             return
 
         # wait for brightness to come and end
-        if not self.automatic_shading_sun_active and self.outdoor_brightness > self.setpoint_brightness:
+        if not self.automatic_shading_sun_active and self.setpoint_brightness < self.outdoor_brightness:
             result = self.automatic_shading_sun_on.process()
             if result:
                 self.logger.info(f"Sun is now active {self.outdoor_brightness:.2f}, {self.setpoint_brightness:.2f}")
@@ -179,8 +180,8 @@ class AutomaticShading(device.Device):
             self.automatic_shading_sun_off.reset()
 
         # wait for sun in range
-        _elevation = elevation(self.location_info.observer)
-        _azimuth = azimuth(self.location_info.observer)
+        current_elevation = elevation(self.location_info.observer)
+        current_azimuth = azimuth(self.location_info.observer)
 
         device_config_parameter = self.device_config["parameter"]
         cardinal_direction_start = device_config_parameter["cardinal_direction"] - \
@@ -190,7 +191,7 @@ class AutomaticShading(device.Device):
 
         # wait for the sun to come in range
         if self.automatic_shading_state == AutomaticShadingState.IDLE and \
-            cardinal_direction_start <= _azimuth <= cardinal_direction_stop:
+            cardinal_direction_start <= current_azimuth <= cardinal_direction_stop:
             self.logger.info(f"Waiting now for Start")
             self.automatic_shading_state = AutomaticShadingState.WAITING_FOR_TIME
             self.automatic_shading_wait_time = time.time()
@@ -202,9 +203,21 @@ class AutomaticShading(device.Device):
             self.automatic_shading_state = AutomaticShadingState.SHADING_READY
 
         # end the shading when the sun leaves the range
-        # TODO: search for the azimuth where its the cardinal direction stop minus the shading stop delay
-        if self.automatic_shading_state == AutomaticShadingState.SHADING_READY and _azimuth >= cardinal_direction_stop:
+        if self.automatic_shading_state == AutomaticShadingState.SHADING_READY and \
+            self.automatic_shading_cardinal_direction_stop_time is None:
+            datetime_search = datetime.now(tz=self.location_info.tzinfo)
+            azimuth_search = azimuth(self.location_info.observer, datetime_search)
+            while azimuth_search < cardinal_direction_stop:
+                datetime_search += timedelta(minutes=1)
+                azimuth_search = azimuth(self.location_info.observer, datetime_search)
+            datetime_search -= timedelta(seconds=device_config_parameter["automatic_shading_stop_delay"])
+            self.automatic_shading_cardinal_direction_stop_time = datetime_search.timestamp()
+
+        if self.automatic_shading_state == AutomaticShadingState.SHADING_READY and \
+            self.automatic_shading_cardinal_direction_stop_time is not None and \
+            self.automatic_shading_cardinal_direction_stop_time < time.time():
             self.logger.info(f"Shading now ended")
+            self.automatic_shading_cardinal_direction_stop_time = None
             self.automatic_shading_state = AutomaticShadingState.IDLE
 
         # when it is bright enough and the sun is in range we can start shading
@@ -227,7 +240,7 @@ class AutomaticShading(device.Device):
             minimum_change_tracking = device_config_parameter["minimum_change_tracking"]
 
             # calculate the angle
-            alpha = ((math.pi / 2) - math.radians(_elevation))
+            alpha = ((math.pi / 2) - math.radians(current_elevation))
             gamma = alpha + math.asin((distance_slats / 2.0) * (math.sin(alpha) / (wide_slats / 2.0)))
             _gamma = max(min(gamma, math.pi), 0.0)
 
@@ -235,7 +248,7 @@ class AutomaticShading(device.Device):
 
             if self.automatic_shading_slat_current is None or \
                 position_slat < self.automatic_shading_slat_current - minimum_change_tracking or \
-                position_slat > self.automatic_shading_slat_current + minimum_change_tracking:
+                self.automatic_shading_slat_current + minimum_change_tracking < position_slat:
                 self.logger.info(f"Shading new value: Height {100}/Slat {position_slat:.2f}")
                 await self.actors_send(100, position_slat)
                 self.automatic_shading_slat_current = position_slat
