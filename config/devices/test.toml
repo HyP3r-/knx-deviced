@@ -1,9 +1,0 @@
-[general]
-class = "LogicInverter"
-name = "Test"
-
-[sensors]
-input = "1/2/3"
-
-[actors]
-output = "1/2/4"
