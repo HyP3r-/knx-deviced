@@ -1,6 +1,6 @@
 [general]
 class = "AutomaticShading"
-name = "OG Süd - Süd"
+name = "Example Automatic Shading"
 
 [parameter]
 distance_slats = 70

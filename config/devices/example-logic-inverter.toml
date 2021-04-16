@@ -1,6 +1,6 @@
 [general]
 class = "LogicInverter"
-name = "Test"
+name = "Example Logic Inverter"
 
 [sensors]
 input = "1/2/3"
