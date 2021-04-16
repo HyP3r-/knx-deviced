@@ -15,7 +15,7 @@ class LogicInverter(device.Device):
     def init(self):
         pass
 
-    def sensor_input(self, packet: knxdclient.ReceivedGroupAPDU):
+    async def sensor_input(self, packet: knxdclient.ReceivedGroupAPDU):
         _input = knxdclient.decode_value(packet.payload.value, knxdclient.KNXDPT.BOOLEAN)
 
         await self.connection.group_write(

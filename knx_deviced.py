@@ -54,7 +54,7 @@ class DeviceInstance:
         self.instance = instance
 
 
-class Core:
+class KnxDeviceDaemon:
     device_instances: List[DeviceInstance]
     device_handlers: Dict[str, List[Callable]]
 
@@ -210,5 +210,5 @@ class Core:
 
 
 if __name__ == "__main__":
-    core = Core()
-    core.run()
+    knx_device_daemon = KnxDeviceDaemon()
+    knx_device_daemon.run()

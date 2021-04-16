@@ -36,7 +36,7 @@ class SwitchOnOffDelay:
         if self.start is None:
             self.start = time.time()
 
-        return self.start + self.delay > time.time()
+        return self.start + self.delay < time.time()
 
     def reset(self):
         self.start = None
