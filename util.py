@@ -4,6 +4,7 @@ from datetime import timedelta
 from typing import Optional
 
 import knxdclient
+from unidecode import unidecode
 
 
 def str_to_group_address(group_address: str):
@@ -34,6 +35,14 @@ def packet_with_payload(packet: knxdclient.ReceivedGroupAPDU):
 
     return packet.payload.type == knxdclient.KNXDAPDUType.WRITE or \
            packet.payload.type == knxdclient.KNXDAPDUType.RESPONSE
+
+
+def sane_logger_name(name: str):
+    """
+    Make the logger name more uniform
+    """
+
+    return unidecode(name.replace(" ", "_").lower())
 
 
 class SwitchOnOffDelay:

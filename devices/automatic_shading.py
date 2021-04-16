@@ -16,15 +16,14 @@ import util
 
 
 class AutomaticShadingState(Enum):
-    NIGHT = 0
-    DAY = 1
-    WAITING_FOR_TIME = 2
-    WAITING_FOR_SUN = 3
-    SHADING_READY = 4
-    SHADING = 5
+    IDLE = 0
+    WAITING_FOR_TIME = 1
+    WAITING_FOR_SUN = 2
+    SHADING_READY = 3
+    SHADING = 4
 
 
-class AutomaticShadingDayNight(Enum):
+class NextDayNight(Enum):
     NIGHT = 0
     DAY = 1
 
@@ -39,7 +38,7 @@ class AutomaticShading(device.Device):
         super().__init__(connection, loop, scheduler, device_config, core_config, name)
 
         # automatic shading configuration
-        self.automatic_shading_state = AutomaticShadingState.NIGHT
+        self.automatic_shading_state = AutomaticShadingState.IDLE
         self.automatic_shading_sun_on = util.SwitchOnOffDelay(timedelta(minutes=5))
         self.automatic_shading_sun_off = util.SwitchOnOffDelay(timedelta(minutes=20))
         self.automatic_shading_sun_active = False
@@ -115,43 +114,33 @@ class AutomaticShading(device.Device):
 
         # if we start after dawn we have to fetch tomorrow
         now = datetime.now(tz=self.location_info.tzinfo)
-        if now > dawn:
+        if dusk < now:
             s = self.get_sun(date=now + timedelta(days=1))
             dusk, dawn = s["dusk"], s["dawn"]
 
-        day_night = AutomaticShadingDayNight.NIGHT if dawn < now else AutomaticShadingDayNight.DAY
-        target_date = dusk if dawn < now else dawn
+        next_day_night = NextDayNight.NIGHT if dawn < now else NextDayNight.DAY
+        next_datetime = dusk if dawn < now else dawn
 
-        self.update_automatic_shading_state(day_night)
-
-        job = self.scheduler.add_job(self.day_night, "date", run_date=target_date, args=(day_night,))
+        job = self.scheduler.add_job(self.day_night, "date", run_date=next_datetime, args=(next_day_night,))
         self.scheduler_jobs.append(job)
 
-    async def day_night(self, day_night: AutomaticShadingDayNight):
+    async def day_night(self, next_day_night: NextDayNight):
         """
         Move shutters completely up or down when changing day/night or night/day
+        :param next_day_night: Defines if the next day/night change is from day to night or from night to day
         """
 
         if not self.enabled:
             return
 
-        if day_night == AutomaticShadingDayNight.DAY:
+        if next_day_night == NextDayNight.DAY:
             position_height, position_slat = 0, 0
         else:
             position_height, position_slat = 100, 100
 
-        self.update_automatic_shading_state(day_night)
-
         await self.actors_send(position_height, position_slat)
 
         await self.schedule_day_night()
-
-    def update_automatic_shading_state(self, day_night: AutomaticShadingDayNight):
-        if day_night == AutomaticShadingDayNight.DAY and self.automatic_shading_state != AutomaticShadingState.NIGHT:
-            return
-
-        self.automatic_shading_state = \
-            AutomaticShadingState.NIGHT if day_night == AutomaticShadingDayNight.NIGHT else AutomaticShadingState.DAY
 
     async def schedule_automatic_shading(self):
         """
@@ -200,7 +189,7 @@ class AutomaticShading(device.Device):
                                   device_config_parameter["cardinal_direction_stop"]
 
         # wait for the sun to come in range
-        if self.automatic_shading_state == AutomaticShadingState.DAY and \
+        if self.automatic_shading_state == AutomaticShadingState.IDLE and \
             cardinal_direction_start <= _azimuth <= cardinal_direction_stop:
             self.logger.info(f"Waiting now for Start")
             self.automatic_shading_state = AutomaticShadingState.WAITING_FOR_TIME
@@ -216,7 +205,7 @@ class AutomaticShading(device.Device):
         # TODO: search for the azimuth where its the cardinal direction stop minus the shading stop delay
         if self.automatic_shading_state == AutomaticShadingState.SHADING_READY and _azimuth >= cardinal_direction_stop:
             self.logger.info(f"Shading now ended")
-            self.automatic_shading_state = AutomaticShadingState.DAY
+            self.automatic_shading_state = AutomaticShadingState.IDLE
 
         # when it is bright enough and the sun is in range we can start shading
         if self.automatic_shading_state == AutomaticShadingState.SHADING_READY and self.automatic_shading_sun_active:

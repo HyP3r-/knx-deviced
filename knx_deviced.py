@@ -72,6 +72,8 @@ class KnxDeviceDaemon:
 
         sys.excepthook = self.handle_unhandled_exception
 
+        self.logger.info("Init of KNX-DeviceD successful")
+
     def handle_unhandled_exception(self, exc_type, exc_value, exc_traceback):
         """
         Handler for unhandled exceptions that will write to the logs
@@ -96,6 +98,8 @@ class KnxDeviceDaemon:
         Register Telegram Handler, connect to knxd and run in background
         """
 
+        self.logger.info("Running KNX-DeviceD")
+
         await self.devices_create()
         await self.devices_init()
 
@@ -111,6 +115,8 @@ class KnxDeviceDaemon:
         """
         Scan folder config/devices for configuration files and create instance
         """
+
+        self.logger.info("Creating Devices")
 
         path_config_devices = os.path.join(self.project_path, "config", "devices")
         files = os.listdir(path_config_devices)
@@ -152,6 +158,8 @@ class KnxDeviceDaemon:
         """
         Load state from the persistence folder and init instances
         """
+
+        self.logger.info("Init Devices")
 
         for device_instance in self.device_instances:
             path = os.path.join(self.project_path, "persistence", f"{device_instance.name}.pickle")
