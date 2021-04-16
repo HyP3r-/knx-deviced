@@ -122,8 +122,7 @@ class AutomaticShading(device.Device):
         day_night = AutomaticShadingDayNight.NIGHT if dawn < now else AutomaticShadingDayNight.DAY
         target_date = dusk if dawn < now else dawn
 
-        self.automatic_shading_state = \
-            AutomaticShadingState.NIGHT if day_night == AutomaticShadingDayNight.NIGHT else AutomaticShadingState.DAY
+        self.update_automatic_shading_state(day_night)
 
         job = self.scheduler.add_job(self.day_night, "date", run_date=target_date, args=(day_night,))
         self.scheduler_jobs.append(job)
@@ -141,12 +140,18 @@ class AutomaticShading(device.Device):
         else:
             position_height, position_slat = 100, 100
 
-        self.automatic_shading_state = \
-            AutomaticShadingState.NIGHT if day_night == AutomaticShadingDayNight.NIGHT else AutomaticShadingState.DAY
+        self.update_automatic_shading_state(day_night)
 
         await self.actors_send(position_height, position_slat)
 
         await self.schedule_day_night()
+
+    def update_automatic_shading_state(self, day_night: AutomaticShadingDayNight):
+        if day_night == AutomaticShadingDayNight.DAY and self.automatic_shading_state != AutomaticShadingState.NIGHT:
+            return
+
+        self.automatic_shading_state = \
+            AutomaticShadingState.NIGHT if day_night == AutomaticShadingDayNight.NIGHT else AutomaticShadingState.DAY
 
     async def schedule_automatic_shading(self):
         """
@@ -171,7 +176,7 @@ class AutomaticShading(device.Device):
         if not self.automatic_shading_sun_active and self.outdoor_brightness > self.setpoint_brightness:
             result = self.automatic_shading_sun_on.process()
             if result:
-                self.logger.info(f"Sun is now active {self.outdoor_brightness}, {self.setpoint_brightness}")
+                self.logger.info(f"Sun is now active {self.outdoor_brightness:.2f}, {self.setpoint_brightness:.2f}")
                 self.automatic_shading_sun_active = True
         else:
             self.automatic_shading_sun_on.reset()
@@ -179,7 +184,7 @@ class AutomaticShading(device.Device):
         if self.automatic_shading_sun_active and self.outdoor_brightness < self.setpoint_brightness:
             result = self.automatic_shading_sun_off.process()
             if result:
-                self.logger.info(f"Sun is now inactive {self.outdoor_brightness}, {self.setpoint_brightness}")
+                self.logger.info(f"Sun is now inactive {self.outdoor_brightness:.2f}, {self.setpoint_brightness:.2f}")
                 self.automatic_shading_sun_active = False
         else:
             self.automatic_shading_sun_off.reset()
@@ -242,7 +247,7 @@ class AutomaticShading(device.Device):
             if self.automatic_shading_slat_current is None or \
                 position_slat < self.automatic_shading_slat_current - minimum_change_tracking or \
                 position_slat > self.automatic_shading_slat_current + minimum_change_tracking:
-                self.logger.info(f"Shading send new value {100} {position_slat}")
+                self.logger.info(f"Shading new value: Height {100}/Slat {position_slat:.2f}")
                 await self.actors_send(100, position_slat)
                 self.automatic_shading_slat_current = position_slat
 
@@ -251,7 +256,7 @@ class AutomaticShading(device.Device):
         Send height and slat position to actor
         """
 
-        self.logger.info(f"Send new values {position_height} {position_slat}")
+        self.logger.info(f"Send new values: Height {position_height:.2f}/Slat {position_slat:.2f}")
         device_config_actors = self.device_config["actors"]
         await self.connection.group_write(
             util.str_to_group_address(device_config_actors["position_height"]),
@@ -285,14 +290,14 @@ class AutomaticShading(device.Device):
         if not util.packet_with_payload(packet):
             return
         self.outdoor_brightness = knxdclient.decode_value(packet.payload.value, knxdclient.KNXDPT.FLOAT16)
-        self.logger.info(f"Received Sensor Outdoor Brightness {self.outdoor_brightness}")
+        self.logger.info(f"Received Sensor Outdoor Brightness {self.outdoor_brightness:.2f}")
         await self.automatic_shading()
 
     async def sensor_setpoint_brightness(self, packet: knxdclient.ReceivedGroupAPDU):
         if not util.packet_with_payload(packet):
             return
         self.setpoint_brightness = knxdclient.decode_value(packet.payload.value, knxdclient.KNXDPT.FLOAT16)
-        self.logger.info(f"Received Sensor Setpoint Brightness {self.setpoint_brightness}")
+        self.logger.info(f"Received Sensor Setpoint Brightness {self.setpoint_brightness:.2f}")
         await self.automatic_shading()
 
     async def sensor_switch_on_delay(self, packet: knxdclient.ReceivedGroupAPDU):
