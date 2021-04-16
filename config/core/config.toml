@@ -1,6 +1,10 @@
+[general]
+log_level = "INFO"
+
 [location]
 name = "Etterschlag"
 region = "Germany"
 timezone = "Europe/Berlin"
 latitude = "48.08496977328352"
 longitude = "11.196318698807467"
+

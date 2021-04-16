@@ -27,7 +27,20 @@ def percentage_to_int(value):
     return round((255.0 / 100.0) * float(value))
 
 
+def packet_with_payload(packet: knxdclient.ReceivedGroupAPDU):
+    """
+    Return true if its a write or response
+    """
+
+    return packet.payload.type == knxdclient.KNXDAPDUType.WRITE or \
+           packet.payload.type == knxdclient.KNXDAPDUType.RESPONSE
+
+
 class SwitchOnOffDelay:
+    """
+    Auxiliary class for switch-on and switch-off delays
+    """
+
     def __init__(self, delay: Optional[timedelta] = None):
         self.delay = delay.total_seconds() if delay is not None else None
         self.start = None
