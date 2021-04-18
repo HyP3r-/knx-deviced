@@ -42,8 +42,7 @@ class AutomaticShading(device.Device):
         self.automatic_shading_sun_on = util.SwitchOnOffDelay(timedelta(minutes=5))
         self.automatic_shading_sun_off = util.SwitchOnOffDelay(timedelta(minutes=20))
         self.automatic_shading_sun_active = False
-        self.automatic_shading_wait_time = None
-        self.automatic_shading_slat_current = None
+        self.automatic_shading_cardinal_direction_start_time = None
         self.automatic_shading_cardinal_direction_stop_time = None
 
         # sun configuration
@@ -53,13 +52,17 @@ class AutomaticShading(device.Device):
                                           self.core_config["location"]["latitude"],
                                           self.core_config["location"]["longitude"])
 
+        # current position of the shade
+        self.current_position_height = 0
+        self.current_position_slat = 0
+
         # jobs
         self.scheduler_jobs = []
 
         # sensors
         self.enabled = False
         self.outdoor_brightness = 0.0
-        self.setpoint_brightness = 0.0
+        self.setpoint_brightness = 20000.0
 
     async def state_save(self) -> dict:
         return {
@@ -70,8 +73,8 @@ class AutomaticShading(device.Device):
             "automatic_shading_sun_on": self.automatic_shading_sun_on,
             "automatic_shading_sun_off": self.automatic_shading_sun_off,
             "automatic_shading_sun_active": self.automatic_shading_sun_active,
-            "automatic_shading_wait_time": self.automatic_shading_wait_time,
-            "automatic_shading_slat_current": self.automatic_shading_slat_current,
+            "current_position_height": self.current_position_height,
+            "current_position_slat": self.current_position_slat,
         }
 
     async def state_load(self, state: dict):
@@ -83,8 +86,9 @@ class AutomaticShading(device.Device):
         self.automatic_shading_sun_on = state["automatic_shading_sun_on"]
         self.automatic_shading_sun_off = state["automatic_shading_sun_off"]
         self.automatic_shading_sun_active = state["automatic_shading_sun_active"]
-        self.automatic_shading_wait_time = state["automatic_shading_wait_time"]
-        self.automatic_shading_slat_current = state["automatic_shading_slat_current"]
+
+        self.current_position_height = state["current_position_height"]
+        self.current_position_slat = state["current_position_slat"]
 
     async def init(self):
         """
@@ -93,6 +97,7 @@ class AutomaticShading(device.Device):
 
         await self.schedule_day_night()
         await self.schedule_automatic_shading()
+        await self.automatic_shading_prepare()
 
     def get_sun(self, date: Optional[datetime.date] = None) -> Dict:
         """
@@ -151,8 +156,39 @@ class AutomaticShading(device.Device):
         if not self.enabled:
             return
 
-        job = self.scheduler.add_job(self.automatic_shading, "cron", second=0, minute="*")
-        self.scheduler_jobs.append(job)
+        jobs = [
+            self.scheduler.add_job(self.automatic_shading, "cron", minute="*", second=0),
+            self.scheduler.add_job(self.automatic_shading_prepare, "cron", hour=0, minute=0, second=0)
+        ]
+        self.scheduler_jobs += jobs
+
+    async def automatic_shading_prepare(self):
+        """
+        Prepare automatic shading by calculating the start and stop time
+        """
+
+        device_config_parameter = self.device_config["parameter"]
+        cardinal_direction_start = device_config_parameter["cardinal_direction"] - \
+                                   device_config_parameter["cardinal_direction_start"]
+        cardinal_direction_stop = device_config_parameter["cardinal_direction"] + \
+                                  device_config_parameter["cardinal_direction_stop"]
+
+        datetime_begin = datetime.now(tz=self.location_info.tzinfo).replace(hour=0, minute=0, second=0, microsecond=0)
+        datetimes = [datetime_begin + timedelta(minutes=seconds) for seconds in range(60 * 24)]
+        azimuth_datetimes = {azimuth(self.location_info.observer, _datetime): _datetime for _datetime in datetimes}
+
+        def closest(_dict, _value):
+            return _dict.get(_value, _dict[min(_dict.keys(), key=lambda k: abs(k - _value))])
+
+        cardinal_direction_start_time = closest(azimuth_datetimes, cardinal_direction_start)
+        cardinal_direction_stop_time = closest(azimuth_datetimes, cardinal_direction_stop)
+
+        self.automatic_shading_cardinal_direction_start_time = \
+            (cardinal_direction_start_time +
+             timedelta(seconds=device_config_parameter["automatic_shading_start_delay"])).timestamp()
+        self.automatic_shading_cardinal_direction_stop_time = \
+            (cardinal_direction_stop_time -
+             timedelta(seconds=device_config_parameter["automatic_shading_stop_delay"])).timestamp()
 
     async def automatic_shading(self):
         """
@@ -179,95 +215,75 @@ class AutomaticShading(device.Device):
         else:
             self.automatic_shading_sun_off.reset()
 
-        # wait for sun in range
-        current_elevation = elevation(self.location_info.observer)
-        current_azimuth = azimuth(self.location_info.observer)
-
-        device_config_parameter = self.device_config["parameter"]
-        cardinal_direction_start = device_config_parameter["cardinal_direction"] - \
-                                   device_config_parameter["cardinal_direction_start"]
-        cardinal_direction_stop = device_config_parameter["cardinal_direction"] + \
-                                  device_config_parameter["cardinal_direction_stop"]
+        sun_in_range = self.automatic_shading_cardinal_direction_start_time <= time.time() <= \
+                       self.automatic_shading_cardinal_direction_stop_time
 
         # wait for the sun to come in range
-        if self.automatic_shading_state == AutomaticShadingState.IDLE and \
-            cardinal_direction_start <= current_azimuth <= cardinal_direction_stop:
-            self.logger.info(f"Waiting now for Start")
-            self.automatic_shading_state = AutomaticShadingState.WAITING_FOR_TIME
-            self.automatic_shading_wait_time = time.time()
-
-        # wait for the switch on delay
-        if self.automatic_shading_state == AutomaticShadingState.WAITING_FOR_TIME and \
-            self.automatic_shading_wait_time + device_config_parameter["automatic_shading_start_delay"] < time.time():
-            self.logger.info(f"Shading Ready")
+        if self.automatic_shading_state == AutomaticShadingState.IDLE and sun_in_range:
+            self.logger.info(f"Sun has entered the range")
             self.automatic_shading_state = AutomaticShadingState.SHADING_READY
 
-        # end the shading when the sun leaves the range
-        if self.automatic_shading_state == AutomaticShadingState.SHADING_READY and \
-            self.automatic_shading_cardinal_direction_stop_time is None:
-            datetime_search = datetime.now(tz=self.location_info.tzinfo)
-            azimuth_search = azimuth(self.location_info.observer, datetime_search)
-            while azimuth_search < cardinal_direction_stop:
-                datetime_search += timedelta(minutes=1)
-                azimuth_search = azimuth(self.location_info.observer, datetime_search)
-            datetime_search -= timedelta(seconds=device_config_parameter["automatic_shading_stop_delay"])
-            self.automatic_shading_cardinal_direction_stop_time = datetime_search.timestamp()
-
-        if self.automatic_shading_state == AutomaticShadingState.SHADING_READY and \
-            self.automatic_shading_cardinal_direction_stop_time is not None and \
-            self.automatic_shading_cardinal_direction_stop_time < time.time():
-            self.logger.info(f"Shading now ended")
-            self.automatic_shading_cardinal_direction_stop_time = None
+        # when sun goes out of range stop shading
+        if (self.automatic_shading_state == AutomaticShadingState.SHADING or
+            self.automatic_shading_state == AutomaticShadingState.SHADING_READY) and not sun_in_range:
+            self.logger.info(f"Sun has left the range")
+            await self.actors_send(0, 0)
             self.automatic_shading_state = AutomaticShadingState.IDLE
 
         # when it is bright enough and the sun is in range we can start shading
         if self.automatic_shading_state == AutomaticShadingState.SHADING_READY and self.automatic_shading_sun_active:
-            self.logger.info(f"Start shading")
+            self.logger.info(f"Start automatic shading")
             self.automatic_shading_state = AutomaticShadingState.SHADING
 
         # when it gets darker again, stop the automatic shading and raise the shades
         if self.automatic_shading_state == AutomaticShadingState.SHADING and not self.automatic_shading_sun_active:
-            self.logger.info(f"Stop shading, its too dark")
+            self.logger.info(f"Stop automatic shading, it is too dark")
             await self.actors_send(0, 0)
-            self.automatic_shading_slat_current = 0
             self.automatic_shading_state = AutomaticShadingState.SHADING_READY
 
         # do the automatic shading
         if self.automatic_shading_state == AutomaticShadingState.SHADING:
             # get configuration
+            device_config_parameter = self.device_config["parameter"]
             distance_slats = device_config_parameter["distance_slats"]
             wide_slats = device_config_parameter["wide_slats"]
             minimum_change_tracking = device_config_parameter["minimum_change_tracking"]
 
-            # calculate the angle
+            # calculate the angle for the slats
+            current_elevation = elevation(self.location_info.observer)
             alpha = ((math.pi / 2) - math.radians(current_elevation))
             gamma = alpha + math.asin((distance_slats / 2.0) * (math.sin(alpha) / (wide_slats / 2.0)))
             _gamma = max(min(gamma, math.pi), 0.0)
 
             position_slat = (100.0 / math.pi) * _gamma
 
-            if self.automatic_shading_slat_current is None or \
-                position_slat < self.automatic_shading_slat_current - minimum_change_tracking or \
-                self.automatic_shading_slat_current + minimum_change_tracking < position_slat:
+            if position_slat < self.current_position_slat - minimum_change_tracking or \
+                self.current_position_slat + minimum_change_tracking < position_slat:
                 self.logger.info(f"Shading new value: Height {100}/Slat {position_slat:.2f}")
                 await self.actors_send(100, position_slat)
-                self.automatic_shading_slat_current = position_slat
+                self.current_position_slat = position_slat
 
-    async def actors_send(self, position_height, position_slat):
+    async def actors_send(self, position_height: float, position_slat: float):
         """
         Send height and slat position to actor
         """
 
         self.logger.info(f"Send new values: Height {position_height:.2f}/Slat {position_slat:.2f}")
         device_config_actors = self.device_config["actors"]
-        await self.connection.group_write(
-            util.str_to_group_address(device_config_actors["position_height"]),
-            knxdclient.KNXDAPDUType.WRITE,
-            knxdclient.encode_value(util.percentage_to_int(position_height), knxdclient.KNXDPT.UINT8))
-        await self.connection.group_write(
-            util.str_to_group_address(device_config_actors["position_slat"]),
-            knxdclient.KNXDAPDUType.WRITE,
-            knxdclient.encode_value(util.percentage_to_int(position_slat), knxdclient.KNXDPT.UINT8))
+
+        if self.current_position_height != position_height:
+            await self.connection.group_write(
+                util.str_to_group_address(device_config_actors["position_height"]),
+                knxdclient.KNXDAPDUType.WRITE,
+                knxdclient.encode_value(util.percentage_to_int(position_height), knxdclient.KNXDPT.UINT8))
+            self.current_position_height = position_height
+
+        if self.current_position_slat != position_slat:
+            await self.connection.group_write(
+                util.str_to_group_address(device_config_actors["position_slat"]),
+                knxdclient.KNXDAPDUType.WRITE,
+                knxdclient.encode_value(util.percentage_to_int(position_slat), knxdclient.KNXDPT.UINT8))
+            self.current_position_slat = position_slat
 
     async def sensor_enable(self, packet: knxdclient.ReceivedGroupAPDU):
         """
