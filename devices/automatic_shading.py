@@ -3,7 +3,7 @@ import math
 import time
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Union
 
 import knxdclient
 from apscheduler.job import Job
@@ -28,7 +28,7 @@ class NextDayNight(Enum):
     DAY = 1
 
 
-def clamp(value: float, _min: float, _max: float) -> float:
+def clamp(value: Union[float, int], _min: Union[float, int], _max: Union[float, int]) -> Union[float, int]:
     return max(min(value, _max), _min)
 
 
@@ -76,7 +76,7 @@ class AutomaticShadingRange:
 
         azimuth_index = azimuths.index(_azimuth)
 
-        azimuth_datetimes_pre = azimuths[azimuth_index - 1]
+        azimuth_datetimes_pre = azimuths[clamp(azimuth_index - 1, 0, len(azimuths))]
         azimuth_datetimes_closest = azimuths[azimuth_index]
 
         is_pre = cardinal_direction <= azimuth_datetimes_closest
