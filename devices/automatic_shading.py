@@ -390,7 +390,9 @@ class AutomaticShading(device.Device):
             await self.init()
         else:
             for job in self.scheduler_jobs:
-                self.scheduler.remove_job(job.id)
+                if self.scheduler.get_job(job.id):
+                    self.scheduler.remove_job(job.id)
+                self.scheduler_jobs.remove(job)
 
     async def sensor_outdoor_brightness(self, packet: knxdclient.ReceivedGroupAPDU):
         if not util.packet_with_payload(packet):
