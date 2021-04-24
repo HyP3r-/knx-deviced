@@ -233,7 +233,9 @@ class AutomaticShading(device.Device):
         next_day_night = NextDayNight.NIGHT if dawn < now else NextDayNight.DAY
         next_datetime = dusk if dawn < now else dawn
 
-        job = self.scheduler.add_job(self.day_night, "date", run_date=next_datetime, args=(next_day_night,))
+        job = self.scheduler.add_job(
+            self.day_night, "date", run_date=next_datetime, args=(next_day_night,), misfire_grace_time=None
+        )
         self.scheduler_jobs.append(job)
 
     async def day_night(self, next_day_night: NextDayNight):
@@ -262,7 +264,7 @@ class AutomaticShading(device.Device):
         if not self.enabled:
             return
 
-        job = self.scheduler.add_job(self.automatic_shading, "cron", minute="*", second=0)
+        job = self.scheduler.add_job(self.automatic_shading, "cron", minute="*", second=0, misfire_grace_time=None)
         self.scheduler_jobs.append(job)
 
     async def automatic_shading(self):
@@ -348,7 +350,9 @@ class AutomaticShading(device.Device):
 
         await self.automatic_shading_range.search_next()
 
-        job = self.scheduler.add_job(self.schedule_range, "date", run_date=self.automatic_shading_range.stop_time_dt)
+        job = self.scheduler.add_job(
+            self.schedule_range, "date", run_date=self.automatic_shading_range.stop_time_dt, misfire_grace_time=None
+        )
         self.scheduler_jobs.append(job)
 
     async def actors_send(self, position_height: float, position_slat: float):
