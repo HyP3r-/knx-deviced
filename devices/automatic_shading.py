@@ -44,27 +44,25 @@ class AutomaticShadingRange:
         self.location_info = location_info
         self.stop_time = self.start_time = datetime.fromtimestamp(0, tz=self.location_info.tzinfo)
 
-    async def generate_azimuth_datetimes(self, search: datetime, range_start: int, range_stop: int, range_step: int,
-                                         hours: bool = False, minutes: bool = False):
+    async def generate_azimuth_datetimes(self, search: datetime, range_stop: int, hours: bool = False,
+                                         minutes: bool = False) -> Dict[float, datetime]:
         """
         Generate for a given datetime and direction a dict of azimuth/datetime values
         """
 
         datetimes = [search + timedelta(hours=(1 if hours else 0) * index,
                                         minutes=(1 if minutes else 0) * index)
-                     for index in range(range_start, range_stop, range_step)]
+                     for index in range(range_stop)]
         return {azimuth(self.location_info.observer, _datetime): _datetime for _datetime in datetimes}
 
-    async def cardinal_direction_get_time(self, start: datetime, cardinal_direction: float,
-                                          search_direction) -> datetime:
+    async def cardinal_direction_get_time(self, start: datetime, cardinal_direction: float) -> datetime:
         """
         With a given start datetime, cardinal_direction and search_direction search for the datetime
         the next or last 24 hours
         This function is a bit optimized so we search in first step 24 hours and then 60 minutes
         """
 
-        azimuth_datetimes = await self.generate_azimuth_datetimes(start, 0, 24 * search_direction, search_direction,
-                                                                  hours=True, minutes=False)
+        azimuth_datetimes = await self.generate_azimuth_datetimes(start, 24, hours=True, minutes=False)
         azimuths = list(azimuth_datetimes.keys())
         _azimuth, _ = closest(azimuth_datetimes, cardinal_direction)
 
@@ -77,7 +75,7 @@ class AutomaticShadingRange:
 
         azimuth_datetimes_detail = await self.generate_azimuth_datetimes(
             azimuth_datetimes[azimuth_datetimes_pre if is_pre else azimuth_datetimes_closest],
-            0, 60, 1, hours=False, minutes=True
+            60, hours=False, minutes=True
         )
 
         _, result = closest(azimuth_datetimes_detail, cardinal_direction)
@@ -99,8 +97,8 @@ class AutomaticShadingRange:
             if self.stop_time == datetime.fromtimestamp(0, tz=self.location_info.tzinfo)
             else self.stop_time + timedelta(hours=1)
         )
-        stop_time = await self.cardinal_direction_get_time(datetime_begin, cardinal_direction_stop, 1)
-        start_time = await self.cardinal_direction_get_time(stop_time, cardinal_direction_start, -1)
+        stop_time = await self.cardinal_direction_get_time(datetime_begin, cardinal_direction_stop)
+        start_time = await self.cardinal_direction_get_time(stop_time - timedelta(hours=24), cardinal_direction_start)
         self.start_time = start_time
         self.stop_time = stop_time
 
