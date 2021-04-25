@@ -1,6 +1,5 @@
 import asyncio
 import math
-import time
 from datetime import datetime, timedelta
 from enum import Enum
 from typing import List, Optional, Dict, Union
@@ -42,16 +41,13 @@ def closest(_dict, _value):
 
 
 class AutomaticShadingRange:
-    start_time_dt: datetime
-    stop_time_dt: datetime
-
-    def __init__(self, device_config, location_info):
+    def __init__(self, device_config: dict, location_info: LocationInfo):
         self.device_config = device_config
         self.location_info = location_info
-        self.start_time_dt = datetime.fromtimestamp(0)
-        self.stop_time_dt = datetime.fromtimestamp(0)
+        self.stop_time = self.start_time = datetime.fromtimestamp(0, tz=self.location_info.tzinfo)
 
-    async def generate_azimuth_datetimes(self, search, range_start, range_stop, range_step, hours=False, minutes=False):
+    async def generate_azimuth_datetimes(self, search: datetime, range_start: int, range_stop: int, range_step: int,
+                                         hours: bool = False, minutes: bool = False):
         """
         Generate for a given datetime and direction a dict of azimuth/datetime values
         """
@@ -70,7 +66,7 @@ class AutomaticShadingRange:
         """
 
         azimuth_datetimes = await self.generate_azimuth_datetimes(start, 0, 24 * search_direction, search_direction,
-                                                                  hours=True)
+                                                                  hours=True, minutes=False)
         azimuths = list(azimuth_datetimes.keys())
         _azimuth, _ = closest(azimuth_datetimes, cardinal_direction)
 
@@ -100,15 +96,15 @@ class AutomaticShadingRange:
         cardinal_direction_stop = (device_config_parameter["cardinal_direction"] +
                                    device_config_parameter["cardinal_direction_stop"]) % 360
 
-        datetime_now = (
+        datetime_begin = (
             datetime.now(tz=self.location_info.tzinfo)
-            if self.stop_time_dt == datetime.fromtimestamp(0)
-            else self.stop_time_dt
+            if self.stop_time == datetime.fromtimestamp(0, tz=self.location_info.tzinfo)
+            else self.stop_time + timedelta(hours=1)
         )
-        stop_time_dt = await self.cardinal_direction_get_time(datetime_now, cardinal_direction_stop, 1)
-        start_time_dt = await self.cardinal_direction_get_time(stop_time_dt, cardinal_direction_start, -1)
-        self.start_time_dt = start_time_dt
-        self.stop_time_dt = stop_time_dt
+        stop_time = await self.cardinal_direction_get_time(datetime_begin, cardinal_direction_stop, 1)
+        start_time = await self.cardinal_direction_get_time(stop_time, cardinal_direction_start, -1)
+        self.start_time = start_time
+        self.stop_time = stop_time
 
     async def search_next(self):
         """
@@ -116,24 +112,24 @@ class AutomaticShadingRange:
         """
 
         # we do not have to search for the next range when we still in the current range
-        if time.time() < self.stop_time_dt.timestamp():
+        if datetime.now(tz=self.location_info.tzinfo) < self.stop_time:
             return
 
         await self._search_next()
 
     @property
-    def start_time(self):
+    def start_time_with_offset(self) -> datetime:
         return (
-            self.start_time_dt +
+            self.start_time +
             timedelta(seconds=self.device_config["parameter"]["automatic_shading_start_delay"])
-        ).timestamp()
+        )
 
     @property
-    def stop_time(self):
+    def stop_time_with_offset(self) -> datetime:
         return (
-            self.stop_time_dt +
+            self.stop_time +
             timedelta(seconds=self.device_config["parameter"]["automatic_shading_stop_delay"])
-        ).timestamp()
+        )
 
 
 class AutomaticShading(device.Device):
@@ -293,7 +289,9 @@ class AutomaticShading(device.Device):
             self.automatic_shading_sun_off.reset()
 
         sun_in_range = (
-            self.automatic_shading_range.start_time <= time.time() <= self.automatic_shading_range.stop_time
+            self.automatic_shading_range.start_time_with_offset
+            <= datetime.now(tz=self.location_info.tzinfo) <=
+            self.automatic_shading_range.stop_time_with_offset
         )
 
         # wait for the sun to come in range
@@ -351,7 +349,7 @@ class AutomaticShading(device.Device):
         await self.automatic_shading_range.search_next()
 
         job = self.scheduler.add_job(
-            self.schedule_range, "date", run_date=self.automatic_shading_range.stop_time_dt, misfire_grace_time=None
+            self.schedule_range, "date", run_date=self.automatic_shading_range.stop_time, misfire_grace_time=None
         )
         self.scheduler_jobs.append(job)
 
