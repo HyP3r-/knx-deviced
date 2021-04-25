@@ -16,10 +16,8 @@ import util
 
 class AutomaticShadingState(Enum):
     IDLE = 0
-    WAITING_FOR_TIME = 1
-    WAITING_FOR_SUN = 2
-    SHADING_READY = 3
-    SHADING = 4
+    SHADING_READY = 1
+    SHADING = 2
 
 
 class NextDayNight(Enum):
@@ -229,6 +227,7 @@ class AutomaticShading(device.Device):
         next_day_night = NextDayNight.NIGHT if dawn < now else NextDayNight.DAY
         next_datetime = dusk if dawn < now else dawn
 
+        self.logger.info(f"Schedule Day/Night: {next_datetime}, {next_day_night}")
         job = self.scheduler.add_job(
             self.day_night, "date", run_date=next_datetime, args=(next_day_night,), misfire_grace_time=None
         )
@@ -260,6 +259,7 @@ class AutomaticShading(device.Device):
         if not self.enabled:
             return
 
+        self.logger.info(f"Schedule Automatic Shading")
         job = self.scheduler.add_job(self.automatic_shading, "cron", minute="*", second=0, misfire_grace_time=None)
         self.scheduler_jobs.append(job)
 
@@ -348,6 +348,7 @@ class AutomaticShading(device.Device):
 
         await self.automatic_shading_range.search_next()
 
+        self.logger.info(f"Schedule Range: {self.automatic_shading_range.stop_time}")
         job = self.scheduler.add_job(
             self.schedule_range, "date", run_date=self.automatic_shading_range.stop_time, misfire_grace_time=None
         )
