@@ -20,7 +20,7 @@ class AutomaticShadingState(Enum):
     SHADING = 2
 
 
-class NextDayNight(Enum):
+class DayNight(Enum):
     NIGHT = 0
     DAY = 1
 
@@ -153,6 +153,7 @@ class AutomaticShading(device.Device):
         # current position of the shade
         self.current_position_height = 0
         self.current_position_slat = 0
+        self.current_day_night = DayNight.DAY
 
         # jobs
         self.scheduler_jobs = []
@@ -213,41 +214,43 @@ class AutomaticShading(device.Device):
             return
 
         # get dusk and dawn of today
-        s = self.get_sun()
-        dusk, dawn = s["dusk"], s["dawn"]
+        _sun = self.get_sun()
+        dusk, dawn = _sun["dusk"], _sun["dawn"]
 
-        # if we start after dawn we have to fetch tomorrow
+        # if we start after dusk we have to fetch tomorrow
         now = datetime.now(tz=self.location_info.tzinfo)
-        if dusk < now:
-            s = self.get_sun(date=now + timedelta(days=1))
-            dusk, dawn = s["dusk"], s["dawn"]
+        if dusk <= now:
+            _sun = self.get_sun(date=now + timedelta(days=1))
+            dusk, dawn = _sun["dusk"], _sun["dawn"]
 
-        next_day_night = NextDayNight.NIGHT if dawn < now else NextDayNight.DAY
-        next_datetime = dusk if dawn < now else dawn
+        after_dawn = dawn <= now
+        self.current_day_night = DayNight.DAY if after_dawn else DayNight.NIGHT
+        next_datetime = dusk if after_dawn else dawn
 
-        self.logger.info(f"Schedule Day/Night: {next_datetime}, {next_day_night}")
-        job = self.scheduler.add_job(
-            self.day_night, "date", run_date=next_datetime, args=(next_day_night,), misfire_grace_time=None
-        )
+        self.logger.info(f"Schedule Day/Night: {next_datetime}, {self.current_day_night}")
+        job = self.scheduler.add_job(self.day_night, "date", run_date=next_datetime, misfire_grace_time=None)
         self.scheduler_jobs.append(job)
 
-    async def day_night(self, next_day_night: NextDayNight):
+    async def day_night(self):
         """
         Move shutters completely up or down when changing day/night or night/day
-        :param next_day_night: Defines if the next day/night change is from day to night or from night to day
         """
 
         if not self.enabled:
             return
 
-        if next_day_night == NextDayNight.DAY:
-            position_height, position_slat = 0, 0
-        else:
-            position_height, position_slat = 100, 100
-
-        await self.actors_send(position_height, position_slat)
-
         await self.schedule_day_night()
+
+        await self.move_to_starting_position()
+
+    async def move_to_starting_position(self):
+        """
+        Move to the respective starting position of the blind during the day or at night
+        """
+
+        position_height, position_slat = (0, 0) if self.current_day_night == DayNight.DAY else (100, 100)
+        self.logger.info(f"Move to starting position: Height {position_height}/Slat {position_slat}")
+        await self.actors_send(position_height, position_slat)
 
     async def schedule_automatic_shading(self):
         """
@@ -301,7 +304,7 @@ class AutomaticShading(device.Device):
         if (self.automatic_shading_state == AutomaticShadingState.SHADING or
             self.automatic_shading_state == AutomaticShadingState.SHADING_READY) and not sun_in_range:
             self.logger.info(f"Sun has left the range")
-            await self.actors_send(0, 0)
+            await self.move_to_starting_position()
             self.automatic_shading_state = AutomaticShadingState.IDLE
 
         # when it is bright enough and the sun is in range we can start shading
@@ -312,7 +315,7 @@ class AutomaticShading(device.Device):
         # when it gets darker again, stop the automatic shading and raise the shades
         if self.automatic_shading_state == AutomaticShadingState.SHADING and not self.automatic_shading_sun_active:
             self.logger.info(f"Stop automatic shading, it is too dark")
-            await self.actors_send(0, 0)
+            await self.move_to_starting_position()
             self.automatic_shading_state = AutomaticShadingState.SHADING_READY
 
         # do the automatic shading
