@@ -1,4 +1,5 @@
 import asyncio
+import copy
 import math
 from datetime import datetime, timedelta
 from enum import Enum
@@ -393,7 +394,7 @@ class AutomaticShading(device.Device):
         if self.enabled:
             await self.init()
         else:
-            for job in self.scheduler_jobs:
+            for job in copy.copy(self.scheduler_jobs):
                 if self.scheduler.get_job(job.id):
                     self.scheduler.remove_job(job.id)
                 self.scheduler_jobs.remove(job)
