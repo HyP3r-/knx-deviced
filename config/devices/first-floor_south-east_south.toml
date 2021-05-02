@@ -1,6 +1,6 @@
 [general]
 class = "AutomaticShading"
-name = "Second Floor South - South"
+name = "First Floor South/East - South"
 
 [parameter]
 distance_slats = 70
@@ -13,12 +13,12 @@ automatic_shading_stop_delay = -1800
 minimum_change_tracking = 10
 
 [sensors]
-enable = "0/6/121"
+enable = "0/6/113"
 outdoor_brightness = "0/6/15"
-setpoint_brightness = "0/6/122"
-switch_on_delay = "0/6/123"
-switch_off_delay = "0/6/124"
+setpoint_brightness = "0/6/114"
+switch_on_delay = "0/6/115"
+switch_off_delay = "0/6/116"
 
 [actors]
-position_height = "0/6/79"
-position_slat = "0/6/80"
+position_height = "0/6/67"
+position_slat = "0/6/68"

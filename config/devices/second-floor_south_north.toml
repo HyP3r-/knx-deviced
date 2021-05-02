@@ -20,5 +20,5 @@ switch_on_delay = "0/6/123"
 switch_off_delay = "0/6/124"
 
 [actors]
-position_height = "0/6/73"
-position_slat = "0/6/74"
+position_height = "0/6/83"
+position_slat = "0/6/84"
