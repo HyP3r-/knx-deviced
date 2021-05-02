@@ -1,6 +1,5 @@
 import re
-import time
-from datetime import timedelta
+from datetime import timedelta, datetime
 from typing import Optional
 
 import knxdclient
@@ -51,14 +50,13 @@ class SwitchOnOffDelay:
     """
 
     def __init__(self, delay: Optional[timedelta] = None):
-        self.delay = delay.total_seconds() if delay is not None else None
+        self.delay = delay if delay is not None else None
         self.start = None
 
     def process(self):
         if self.start is None:
-            self.start = time.time()
-
-        return self.start + self.delay < time.time()
+            self.start = datetime.now()
+        return self.start + self.delay < datetime.now()
 
     def reset(self):
         self.start = None

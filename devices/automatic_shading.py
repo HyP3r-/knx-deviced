@@ -409,22 +409,22 @@ class AutomaticShading(device.Device):
     async def sensor_setpoint_brightness(self, packet: knxdclient.ReceivedGroupAPDU):
         if not util.packet_with_payload(packet):
             return
-        self.setpoint_brightness = knxdclient.decode_value(packet.payload.value, knxdclient.KNXDPT.FLOAT16)
+        self.setpoint_brightness = knxdclient.decode_value(packet.payload.value, knxdclient.KNXDPT.FLOAT16) * 1000.0
         self.logger.info(f"Received Sensor Setpoint Brightness {self.setpoint_brightness:.2f}")
         await self.automatic_shading()
 
     async def sensor_switch_on_delay(self, packet: knxdclient.ReceivedGroupAPDU):
         if not util.packet_with_payload(packet):
             return
-        delay = knxdclient.decode_value(packet.payload.value, knxdclient.KNXDPT.UINT16)
+        delay = knxdclient.decode_value(packet.payload.value, knxdclient.KNXDPT.FLOAT16)
         self.logger.info(f"Received Sensor Switch On Delay {delay}")
-        self.automatic_shading_sun_on.set_delay(delay)
+        self.automatic_shading_sun_on.set_delay(timedelta(minutes=delay))
         await self.automatic_shading()
 
     async def sensor_switch_off_delay(self, packet: knxdclient.ReceivedGroupAPDU):
         if not util.packet_with_payload(packet):
             return
-        delay = knxdclient.decode_value(packet.payload.value, knxdclient.KNXDPT.UINT16)
+        delay = knxdclient.decode_value(packet.payload.value, knxdclient.KNXDPT.FLOAT16)
         self.logger.info(f"Received Sensor Switch Off Delay {delay}")
-        self.automatic_shading_sun_off.set_delay(delay)
+        self.automatic_shading_sun_off.set_delay(timedelta(minutes=delay))
         await self.automatic_shading()
