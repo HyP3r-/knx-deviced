@@ -1,0 +1,24 @@
+[general]
+class = "AutomaticShading"
+name = "Second Floor North - East"
+
+[parameter]
+distance_slats = 70
+wide_slats = 80
+cardinal_direction = 90
+cardinal_direction_start = 85
+cardinal_direction_stop = 85
+automatic_shading_start_delay = 1800
+automatic_shading_stop_delay = -1800
+minimum_change_tracking = 10
+
+[sensors]
+enable = "0/6/117"
+outdoor_brightness = "0/6/15"
+setpoint_brightness = "0/6/118"
+switch_on_delay = "0/6/119"
+switch_off_delay = "0/6/120"
+
+[actors]
+position_height = "0/6/71"
+position_slat = "0/6/72"

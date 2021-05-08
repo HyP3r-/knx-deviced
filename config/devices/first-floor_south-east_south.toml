@@ -1,0 +1,24 @@
+[general]
+class = "AutomaticShading"
+name = "First Floor South/East - South"
+
+[parameter]
+distance_slats = 70
+wide_slats = 80
+cardinal_direction = 180
+cardinal_direction_start = 85
+cardinal_direction_stop = 85
+automatic_shading_start_delay = 1800
+automatic_shading_stop_delay = -1800
+minimum_change_tracking = 10
+
+[sensors]
+enable = "0/6/113"
+outdoor_brightness = "0/6/15"
+setpoint_brightness = "0/6/114"
+switch_on_delay = "0/6/115"
+switch_off_delay = "0/6/116"
+
+[actors]
+position_height = "0/6/67"
+position_slat = "0/6/68"
